@@ -287,7 +287,8 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 								const status = part.state?.status ?? "unknown";
 								conversationContext += `[Tool: ${part.tool} - ${status}]\n`;
 								if (part.state?.output) {
-									conversationContext += `Output: ${part.state.output}\n`;
+									const outputPreview = part.state.output.slice(0, 500);
+									conversationContext += `Output: ${outputPreview}${part.state.output.length > 500 ? "..." : ""}\n`;
 								}
 							}
 						}
