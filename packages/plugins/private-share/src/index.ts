@@ -271,7 +271,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					let conversationContext = "=== RESTORED CONVERSATION HISTORY ===\n\n";
 					conversationContext += `Original Session: ${originalSession.title}\n`;
 					conversationContext += `Captured: ${new Date(snapshot.createdAt).toISOString()}\n\n`;
-					conversationContext += `IMPORTANT: This session may have been conducted on a different filesystem, so file paths may not be accurate. The current user may have the same codebases in a different location, so you can ask them for the correct path to the repo root, and go from there.\n\n`
+					conversationContext += `IMPORTANT: This session may have been conducted on a different filesystem, so file paths may not be accurate. The current user may have the same codebases in a different location, so you can ask them for the correct path to the repo root, and go from there.\n\n`;
 
 					for (const msg of messages) {
 						const role = msg.role === "user" ? "USER" : "ASSISTANT";
@@ -287,8 +287,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 								const status = part.state?.status ?? "unknown";
 								conversationContext += `[Tool: ${part.tool} - ${status}]\n`;
 								if (part.state?.output) {
-									const outputPreview = part.state.output.slice(0, 500);
-									conversationContext += `Output: ${outputPreview}${part.state.output.length > 500 ? "..." : ""}\n`;
+									conversationContext += `Output: ${part.state.output}\n`;
 								}
 							}
 						}
