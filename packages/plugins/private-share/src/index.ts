@@ -303,10 +303,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 
 					// Get the first user message's model info for injection, or use a default
 					const firstUserMsg = messages.find((m) => m.role === "user");
-					const modelInfo = firstUserMsg?.model ?? {
-						providerID: "anthropic",
-						modelID: "claude-sonnet-4-20250514",
-					};
+					const modelInfo = firstUserMsg?.model;
 
 					// Inject the conversation history as context using noReply
 					const injectResponse = await client.session.prompt({
