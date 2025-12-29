@@ -1,15 +1,15 @@
-import type { Plugin } from "@opencode-ai/plugin";
+import { type Plugin, tool } from "@opencode-ai/plugin";
 
 export const PrivateSharePlugin: Plugin = async () => {
-	console.log("hello world!");
 	return {
-		event: async ({ event }) => {
-			if (
-				event.type === "session.created" ||
-				event.type === "session.updated"
-			) {
-				console.log("HELLO WORLD", event.type);
-			}
+		tool: {
+			"private-share": tool({
+				description: "Share the session privately.",
+				args: {},
+				async execute(_, ctx) {
+					return `Helloooooooo world: ${ctx.sessionID}`;
+				},
+			}),
 		},
 	};
 };
