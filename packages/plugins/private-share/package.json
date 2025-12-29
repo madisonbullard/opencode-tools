@@ -1,0 +1,25 @@
+{
+	"name": "@madisonbullard/private-share",
+	"version": "0.1.0",
+	"description": "OpenCode plugin that handles sharing to private AWS infra.",
+	"author": "madisonbullard",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "bun build src/index.ts --outdir dist --target node",
+		"prepublishOnly": "bun run build"
+	},
+	"keywords": [
+		"opencode",
+		"opencode-plugin"
+	],
+	"devDependencies": {
+		"@opencode-ai/plugin": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:"
+	}
+}

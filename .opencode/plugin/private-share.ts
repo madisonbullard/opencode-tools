@@ -1,0 +1,1 @@
+../../packages/plugins/private-share/src/index.ts
