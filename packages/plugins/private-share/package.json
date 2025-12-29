@@ -18,8 +18,12 @@
 		"opencode-plugin"
 	],
 	"devDependencies": {
-		"@opencode-ai/plugin": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:"
+	},
+	"dependencies": {
+		"@opencode-ai/plugin": "catalog:",
+		"@opencode-ai/sdk": "catalog:",
+		"zod": "catalog:"
 	}
 }
