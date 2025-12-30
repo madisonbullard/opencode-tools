@@ -52,49 +52,6 @@ If the session was created on a different machine, the plugin will attempt to au
 ingest-session shareId="2025-01-15-my-session" projectPath="/path/to/repo"
 ```
 
----
-
-### `@madisonbullard/opencode-scripts`
-
-Utility scripts used by the private-share plugin and potentially other tools. Provides:
-
-- **Session ingestion**: Write session data directly into OpenCode's storage structure
-- **Repository detection**: Find git repositories by name on the local machine
-- **Path utilities**: Handle path remapping between different machines
-
-#### Installation
-
-```bash
-npm install @madisonbullard/opencode-scripts
-```
-
-#### Exports
-
-```typescript
-// Main exports
-import {
-  ingestSession,
-  analyzeSession,
-  listSessions,
-  validateRemapPath,
-  getPrivateSharesDir,
-} from "@madisonbullard/opencode-scripts";
-
-// Repository detection
-import {
-  findRepositoryByName,
-  resolveProjectPath,
-  verifyRepoPath,
-} from "@madisonbullard/opencode-scripts/detect-repo";
-
-// Path utilities
-import {
-  remapPaths,
-  extractOriginalPath,
-  getProjectName,
-} from "@madisonbullard/opencode-scripts/path-utils";
-```
-
 ## Development
 
 This is a monorepo managed with [Bun](https://bun.sh) workspaces and [Turborepo](https://turbo.build/repo).
@@ -130,9 +87,8 @@ bun check
 ```
 opencode-tools/
 ├── packages/
-│   ├── plugins/
-│   │   └── private-share/    # OpenCode plugin for private session sharing
-│   └── scripts/              # Shared utility scripts
+│   └── plugins/
+│       └── private-share/    # OpenCode plugin for private session sharing
 ├── scripts/
 │   └── publish.ts            # Publishing automation
 ├── biome.json                # Linter configuration
