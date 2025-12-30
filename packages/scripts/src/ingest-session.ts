@@ -1,12 +1,6 @@
-#!/usr/bin/env bun
 /**
  * Script to ingest a session from a private-share JSON file and write the data
  * directly into the opencode storage folder structure.
- *
- * Usage:
- *   bun run ingest-session.ts <path-to-file.json>
- *   bun run ingest-session.ts --list
- *   bun run ingest-session.ts <share-id>
  *
  * This creates native opencode session data from a private-share file,
  * allowing the session to appear in the session list and be fully navigable.
@@ -121,6 +115,24 @@ interface ProjectData {
 	time: { created: number; updated: number };
 }
 
+export interface IngestResult {
+	success: boolean;
+	sessionId: string;
+	sessionTitle: string;
+	messageCount: number;
+	partCount: number;
+	diffCount: number;
+}
+
+export interface ListSessionsResult {
+	sessions: Array<{
+		shareId: string;
+		title: string;
+		created: string;
+		messageCount: number;
+	}>;
+}
+
 /**
  * Check if a file exists
  */
@@ -150,18 +162,17 @@ async function writeJson(path: string, data: unknown): Promise<void> {
 /**
  * Write project data if it doesn't exist
  */
-async function writeProject(projectData: ProjectData): Promise<void> {
+async function writeProject(projectData: ProjectData): Promise<boolean> {
 	const projectDir = join(STORAGE_DIR, "project");
 	await ensureDir(projectDir);
 
 	const projectFile = join(projectDir, `${projectData.id}.json`);
 	if (await fileExists(projectFile)) {
-		console.log(`  Project ${projectData.id} already exists, skipping`);
-		return;
+		return false; // Already exists
 	}
 
 	await writeJson(projectFile, projectData);
-	console.log(`  Created project: ${projectFile}`);
+	return true;
 }
 
 /**
@@ -173,7 +184,6 @@ async function writeSession(session: SessionData): Promise<void> {
 
 	const sessionFile = join(sessionDir, `${session.id}.json`);
 	await writeJson(sessionFile, session);
-	console.log(`  Created session: ${sessionFile}`);
 }
 
 /**
@@ -185,7 +195,6 @@ async function writeMessage(message: MessageData): Promise<void> {
 
 	const messageFile = join(messageDir, `${message.id}.json`);
 	await writeJson(messageFile, message);
-	console.log(`  Created message: ${messageFile}`);
 }
 
 /**
@@ -197,7 +206,6 @@ async function writePart(part: PartData): Promise<void> {
 
 	const partFile = join(partDir, `${part.id}.json`);
 	await writeJson(partFile, part);
-	console.log(`  Created part: ${partFile}`);
 }
 
 /**
@@ -212,22 +220,31 @@ async function writeSessionDiff(
 
 	const diffFile = join(diffDir, `${sessionID}.json`);
 	await writeJson(diffFile, diffs);
-	console.log(`  Created session_diff: ${diffFile}`);
+}
+
+/**
+ * Resolve a share ID or path to a full file path
+ */
+function resolveFilePath(arg: string): string {
+	// If it looks like a path (contains / or ends with .json), use it directly
+	if (arg.includes("/") || arg.endsWith(".json")) {
+		return arg;
+	}
+	// Otherwise, treat it as a share ID
+	return join(PRIVATE_SHARES_DIR, `${arg}.json`);
 }
 
 /**
  * Main function to ingest a session
  */
-async function ingestSession(filePath: string): Promise<void> {
-	console.log(`\nIngesting session from: ${filePath}\n`);
+export async function ingestSession(
+	filePathOrShareId: string,
+): Promise<IngestResult> {
+	const filePath = resolveFilePath(filePathOrShareId);
 
 	// Read and parse the private-share file
 	const content = await readFile(filePath, "utf-8");
 	const privateShare: PrivateShareSession = JSON.parse(content);
-
-	console.log(`Share ID: ${privateShare.id}`);
-	console.log(`Session ID: ${privateShare.sessionID}`);
-	console.log(`Created: ${new Date(privateShare.createdAt).toISOString()}\n`);
 
 	// Extract data by type
 	const sessionEntry = privateShare.data.find((d) => d.type === "session") as
@@ -238,7 +255,10 @@ async function ingestSession(filePath: string): Promise<void> {
 	) as Array<{ type: "message"; data: MessageData }>;
 	const partEntries = privateShare.data.filter(
 		(d) => d.type === "part",
-	) as Array<{ type: "part"; data: PartData }>;
+	) as Array<{
+		type: "part";
+		data: PartData;
+	}>;
 	const diffEntry = privateShare.data.find((d) => d.type === "session_diff") as
 		| { type: "session_diff"; data: DiffData[] }
 		| undefined;
@@ -263,62 +283,43 @@ async function ingestSession(filePath: string): Promise<void> {
 		},
 	};
 
-	// Summary of what we'll write
-	console.log(`Data to ingest:`);
-	console.log(`  - 1 session (${session.title})`);
-	console.log(`  - ${messageEntries.length} messages`);
-	console.log(`  - ${partEntries.length} parts`);
-	console.log(
-		`  - ${diffEntry?.data.length ?? 0} diffs${diffEntry?.data.length ? "" : " (empty)"}\n`,
-	);
-
 	// Write all data
-	console.log("Writing project data...");
 	await writeProject(projectData);
-
-	console.log("\nWriting session data...");
 	await writeSession(session);
 
-	console.log("\nWriting message data...");
 	for (const entry of messageEntries) {
 		await writeMessage(entry.data);
 	}
 
-	console.log("\nWriting part data...");
 	for (const entry of partEntries) {
 		await writePart(entry.data);
 	}
 
-	console.log("\nWriting session diffs...");
 	await writeSessionDiff(session.id, diffEntry?.data ?? []);
 
-	console.log(`\n✓ Session ingested successfully!`);
-	console.log(
-		`\nThe session "${session.title}" should now appear in your opencode session list.`,
-	);
-	console.log(`Session ID: ${session.id}`);
+	return {
+		success: true,
+		sessionId: session.id,
+		sessionTitle: session.title,
+		messageCount: messageEntries.length,
+		partCount: partEntries.length,
+		diffCount: diffEntry?.data.length ?? 0,
+	};
 }
 
 /**
  * List all available sessions in the private shares directory
  */
-async function listSessions(): Promise<void> {
-	console.log(`\nAvailable sessions in ${PRIVATE_SHARES_DIR}:\n`);
-
+export async function listSessions(): Promise<ListSessionsResult> {
 	let files: string[];
 	try {
 		files = await readdir(PRIVATE_SHARES_DIR);
 	} catch {
-		console.error(`No private shares directory found at ${PRIVATE_SHARES_DIR}`);
-		console.error("Create a private share first using the private-share tool.");
-		process.exit(1);
+		return { sessions: [] };
 	}
 
 	const jsonFiles = files.filter((f) => f.endsWith(".json"));
-	if (jsonFiles.length === 0) {
-		console.log("No sessions found.");
-		return;
-	}
+	const sessions: ListSessionsResult["sessions"] = [];
 
 	for (const file of jsonFiles) {
 		const shareId = file.replace(".json", "");
@@ -334,65 +335,28 @@ async function listSessions(): Promise<void> {
 				(d) => d.type === "message",
 			).length;
 
-			console.log(`  ${shareId}`);
-			console.log(`    Title: ${title}`);
-			console.log(`    Created: ${created}`);
-			console.log(`    Messages: ${messageCount}\n`);
+			sessions.push({
+				shareId,
+				title,
+				created,
+				messageCount,
+			});
 		} catch {
-			console.log(`  ${shareId} (unable to read details)\n`);
+			sessions.push({
+				shareId,
+				title: "Unknown",
+				created: "Unknown",
+				messageCount: 0,
+			});
 		}
 	}
 
-	console.log("Usage: bun run ingest-session.ts <share-id>");
+	return { sessions };
 }
 
 /**
- * Resolve a share ID or path to a full file path
+ * Get the private shares directory path
  */
-function resolveFilePath(arg: string): string {
-	// If it looks like a path (contains / or ends with .json), use it directly
-	if (arg.includes("/") || arg.endsWith(".json")) {
-		return arg;
-	}
-	// Otherwise, treat it as a share ID
-	return join(PRIVATE_SHARES_DIR, `${arg}.json`);
-}
-
-function printUsage(): void {
-	console.log("Usage: bun run ingest-session.ts <path-or-share-id>");
-	console.log("       bun run ingest-session.ts --list");
-	console.log("\nOptions:");
-	console.log("  --list, -l    List available sessions");
-	console.log("  --help, -h    Show this help message");
-	console.log("\nExamples:");
-	console.log("  bun run ingest-session.ts mjroi47q-2nflpsvb");
-	console.log(
-		"  bun run ingest-session.ts ~/.opencode/private-shares/mjroi47q-2nflpsvb.json",
-	);
-}
-
-// CLI entry point
-const args = process.argv.slice(2);
-
-if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-	printUsage();
-	process.exit(args.length === 0 ? 1 : 0);
-}
-
-if (args.includes("--list") || args.includes("-l")) {
-	listSessions().catch((error: Error) => {
-		console.error("\nError listing sessions:", error.message);
-		process.exit(1);
-	});
-} else {
-	const arg = args[0];
-	if (typeof arg !== "string") {
-		console.error("\nError ingesting session: No argument passed.");
-		process.exit(1);
-	}
-	const filePath = resolveFilePath(arg);
-	ingestSession(filePath).catch((error: Error) => {
-		console.error("\nError ingesting session:", error.message);
-		process.exit(1);
-	});
+export function getPrivateSharesDir(): string {
+	return PRIVATE_SHARES_DIR;
 }

@@ -1,0 +1,14 @@
+{
+	"$schema": "https://json.schemastore.org/package",
+	"name": "@madisonbullard/scripts",
+	"version": "0.1.0",
+	"description": "Scripts for opencode-tools",
+	"type": "module",
+	"devDependencies": {
+		"@types/bun": "catalog:"
+	},
+	"exports": {
+		".": "./src/index.ts",
+		"./ingest-session": "./src/ingest-session.ts"
+	}
+}

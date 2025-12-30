@@ -1,6 +1,11 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+	getPrivateSharesDir,
+	ingestSession as ingestSessionScript,
+	listSessions as listSessionsScript,
+} from "@madisonbullard/scripts";
 import { type Plugin, tool } from "@opencode-ai/plugin";
 
 // Use the zod instance from the plugin to ensure version compatibility
@@ -31,51 +36,6 @@ interface PrivateShareSession {
 }
 
 const PRIVATE_SHARES_DIR = join(homedir(), ".opencode", "private-shares");
-
-/**
- * List all available sessions in the private shares directory
- */
-async function listAvailableSessions(): Promise<string> {
-	try {
-		const files = await readdir(PRIVATE_SHARES_DIR);
-		const jsonFiles = files.filter((f) => f.endsWith(".json"));
-
-		if (jsonFiles.length === 0) {
-			return `No sessions found in ${PRIVATE_SHARES_DIR}`;
-		}
-
-		let result = `Available sessions (${jsonFiles.length} total):\n\n`;
-
-		for (const file of jsonFiles) {
-			const shareId = file.replace(".json", "");
-			try {
-				const content = await readFile(join(PRIVATE_SHARES_DIR, file), "utf-8");
-				const privateShare: PrivateShareSession = JSON.parse(content);
-				const sessionData = privateShare.data.find(
-					(d: ShareData) => d.type === "session",
-				);
-				const title =
-					(sessionData?.data as { title?: string })?.title ?? "Unknown";
-				const created = new Date(privateShare.createdAt).toLocaleString();
-				const messageCount = privateShare.data.filter(
-					(d: ShareData) => d.type === "message",
-				).length;
-
-				result += `  ${shareId}\n`;
-				result += `    Title: ${title}\n`;
-				result += `    Created: ${created}\n`;
-				result += `    Messages: ${messageCount}\n\n`;
-			} catch {
-				result += `  ${shareId} (unable to read details)\n\n`;
-			}
-		}
-
-		result += `\nUse ingest-session with a shareId to restore a session.`;
-		return result;
-	} catch {
-		return `No private shares directory found at ${PRIVATE_SHARES_DIR}\nCreate a private share first using the private-share tool.`;
-	}
-}
 
 export const PrivateSharePlugin: Plugin = async ({ client }) => {
 	return {
@@ -192,157 +152,49 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 
 					// Handle listing available sessions
 					if (shareId === "list") {
-						return await listAvailableSessions();
+						const result = await listSessionsScript();
+						if (result.sessions.length === 0) {
+							return `No sessions found in ${getPrivateSharesDir()}\nCreate a private share first using the private-share tool.`;
+						}
+
+						let output = `Available sessions (${result.sessions.length} total):\n\n`;
+						for (const session of result.sessions) {
+							output += `  ${session.shareId}\n`;
+							output += `    Title: ${session.title}\n`;
+							output += `    Created: ${session.created}\n`;
+							output += `    Messages: ${session.messageCount}\n\n`;
+						}
+						output += `\nUse ingest-session with a shareId to restore a session.`;
+						return output;
 					}
 
-					// Read the private share file
-					const filePath = join(PRIVATE_SHARES_DIR, `${shareId}.json`);
-					let fileContent: string;
+					// Ingest the session using the script
 					try {
-						fileContent = await readFile(filePath, "utf-8");
-					} catch {
-						// Try to list available sessions to help the user
-						const available = await listAvailableSessions();
-						throw new Error(`Failed to read file: ${filePath}\n\n${available}`);
-					}
+						const result = await ingestSessionScript(shareId);
 
-					const privateShare: PrivateShareSession = JSON.parse(fileContent);
+						let summary = `Session ingested successfully!\n\n`;
+						summary += `Session ID: ${result.sessionId}\n`;
+						summary += `Title: ${result.sessionTitle}\n`;
+						summary += `Messages: ${result.messageCount}\n`;
+						summary += `Parts: ${result.partCount}\n`;
+						summary += `Diffs: ${result.diffCount}\n\n`;
+						summary += `The session "${result.sessionTitle}" should now appear in your opencode session list.\n`;
 
-					// Extract data from the private share
-					const sessionData = privateShare.data.find(
-						(d: ShareData) => d.type === "session",
-					);
-					const messageData = privateShare.data.filter(
-						(d: ShareData) => d.type === "message",
-					);
-					const partData = privateShare.data.filter(
-						(d: ShareData) => d.type === "part",
-					);
+						return summary;
+					} catch (error) {
+						// If ingestion fails, try to list available sessions to help the user
+						const available = await listSessionsScript();
+						let errorMsg = `Failed to ingest session: ${error instanceof Error ? error.message : String(error)}\n\n`;
 
-					if (!sessionData) {
-						throw new Error("File does not contain session data");
-					}
-
-					const originalSession = sessionData.data as {
-						id: string;
-						title: string;
-						directory: string;
-						time: { created: number; updated: number };
-					};
-
-					// Create a new session
-					const newSessionResponse = await client.session.create({
-						body: {
-							title: `[Restored] ${originalSession.title}`,
-						},
-					});
-
-					if (newSessionResponse.error) {
-						throw new Error(
-							`Failed to create new session: ${JSON.stringify(newSessionResponse.error)}`,
-						);
-					}
-
-					const newSession = newSessionResponse.data;
-					if (!newSession?.id) {
-						throw new Error(
-							"Failed to create new session: no session ID returned",
-						);
-					}
-
-					// Parse messages and parts
-					const messages = messageData.map((m) => m.data) as Array<{
-						id: string;
-						role: "user" | "assistant";
-						time: { created: number };
-						model?: { providerID: string; modelID: string };
-					}>;
-
-					const parts = partData.map((p) => p.data) as Array<{
-						id: string;
-						messageID: string;
-						type: string;
-						text?: string;
-						tool?: string;
-						state?: { input?: unknown; output?: string; status?: string };
-					}>;
-
-					// Sort messages by creation time
-					messages.sort((a, b) => a.time.created - b.time.created);
-
-					// Build conversation history as context
-					// We'll inject the full conversation as a synthetic context message
-					let conversationContext = "=== RESTORED CONVERSATION HISTORY ===\n\n";
-					conversationContext += `Original Session: ${originalSession.title}\n`;
-					conversationContext += `Captured: ${new Date(privateShare.createdAt).toISOString()}\n\n`;
-
-					for (const msg of messages) {
-						const role = msg.role === "user" ? "USER" : "ASSISTANT";
-						const time = new Date(msg.time.created).toISOString();
-						const msgParts = parts.filter((p) => p.messageID === msg.id);
-
-						conversationContext += `--- ${role} [${time}] ---\n`;
-
-						for (const part of msgParts) {
-							if (part.type === "text" && part.text) {
-								conversationContext += `${part.text}\n`;
-							} else if (part.type === "tool" && part.tool) {
-								const status = part.state?.status ?? "unknown";
-								conversationContext += `[Tool: ${part.tool} - ${status}]\n`;
-								if (part.state?.output) {
-									const outputPreview = part.state.output.slice(0, 500);
-									conversationContext += `Output: ${outputPreview}${part.state.output.length > 500 ? "..." : ""}\n`;
-								}
+						if (available.sessions.length > 0) {
+							errorMsg += `Available sessions:\n`;
+							for (const session of available.sessions) {
+								errorMsg += `  - ${session.shareId}: ${session.title}\n`;
 							}
 						}
-						conversationContext += "\n";
+
+						throw new Error(errorMsg);
 					}
-
-					conversationContext += "=== END OF RESTORED HISTORY ===\n\n";
-					conversationContext +=
-						"The above is the conversation history from a previous session.\n\n";
-					conversationContext += `IMPORTANT: This session may have been conducted on a different filesystem, so file paths may not be accurate. The current user may have the same codebases in a different location, so you can ask them for the correct path to the repo root, and go from there.\n\n`;
-					conversationContext +=
-						"You can reference this context to continue the conversation or answer questions about what was discussed.";
-
-					// Get the first user message's model info for injection, or use a default
-					const firstUserMsg = messages.find((m) => m.role === "user");
-					const modelInfo = firstUserMsg?.model;
-
-					// Inject the conversation history as context using noReply
-					const injectResponse = await client.session.prompt({
-						path: { id: newSession.id },
-						body: {
-							noReply: true,
-							model: modelInfo,
-							parts: [
-								{
-									type: "text",
-									text: conversationContext,
-									synthetic: true, // Mark as synthetic/injected content
-								},
-							],
-						},
-					});
-
-					if (injectResponse.error) {
-						throw new Error(
-							`Failed to inject conversation context: ${JSON.stringify(injectResponse.error)}`,
-						);
-					}
-
-					let summary = `Session ingested successfully!\n\n`;
-					summary += `Original Session ID: ${privateShare.sessionID}\n`;
-					summary += `New Session ID: ${newSession.id}\n`;
-					summary += `Original Title: ${originalSession.title}\n`;
-					summary += `Created: ${new Date(privateShare.createdAt).toISOString()}\n\n`;
-
-					summary += `\n=== Next Steps ===\n`;
-					summary += `The conversation history has been injected into the new session as context.\n`;
-					summary += `You can now continue the conversation or ask questions about what was discussed.\n`;
-					summary += `Switch to session ${newSession.id} to continue.`;
-
-					return summary;
 				},
 			}),
 		},

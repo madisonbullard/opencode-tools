@@ -22,6 +22,7 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
+		"@madisonbullard/scripts": "workspace:*",
 		"@opencode-ai/plugin": "catalog:",
 		"@opencode-ai/sdk": "catalog:",
 		"zod": "catalog:"

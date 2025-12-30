@@ -16,6 +16,7 @@
       "name": "@madisonbullard/private-share",
       "version": "0.1.0",
       "dependencies": {
+        "@madisonbullard/scripts": "workspace:*",
         "@opencode-ai/plugin": "catalog:",
         "@opencode-ai/sdk": "catalog:",
         "zod": "catalog:",
@@ -23,6 +24,13 @@
       "devDependencies": {
         "@types/node": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "packages/scripts": {
+      "name": "@madisonbullard/scripts",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "catalog:",
       },
     },
   },
@@ -56,6 +64,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.3.10", "", { "os": "win32", "cpu": "x64" }, "sha512-pHEFgq7dUEsKnqG9mx9bXihxGI49X+ar+UBrEIj3Wqj3UCZp1rNgV+OoyjFgcXsjCWpuEAF4VJdkZr3TrWdCbQ=="],
 
     "@madisonbullard/private-share": ["@madisonbullard/private-share@workspace:packages/plugins/private-share"],
+
+    "@madisonbullard/scripts": ["@madisonbullard/scripts@workspace:packages/scripts"],
 
     "@opencode-ai/plugin": ["@opencode-ai/plugin@1.0.207", "", { "dependencies": { "@opencode-ai/sdk": "1.0.207", "zod": "4.1.8" } }, "sha512-UOjZ09lVwWv0MRHUcluLm3eeYC7rmQyuSRfaaK6RLKn1bdsypp8lnuw9HZ2nrR5kmkiF12+9yMM4bVgER6lTBw=="],
 
