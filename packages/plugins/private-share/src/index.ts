@@ -1,7 +1,7 @@
-import { type Plugin, tool } from "@opencode-ai/plugin";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type Plugin, tool } from "@opencode-ai/plugin";
 
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;
@@ -41,7 +41,7 @@ async function listAvailableSessions(): Promise<string> {
 		const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
 		if (jsonFiles.length === 0) {
-			return "No sessions found in " + PRIVATE_SHARES_DIR;
+			return `No sessions found in ${PRIVATE_SHARES_DIR}`;
 		}
 
 		let result = `Available sessions (${jsonFiles.length} total):\n\n`;
@@ -217,12 +217,6 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					);
 					const partData = privateShare.data.filter(
 						(d: ShareData) => d.type === "part",
-					);
-					const diffData = privateShare.data.find(
-						(d: ShareData) => d.type === "session_diff",
-					);
-					const modelData = privateShare.data.find(
-						(d: ShareData) => d.type === "model",
 					);
 
 					if (!sessionData) {
