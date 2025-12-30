@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Plugin } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin/tool";
 import {
 	analyzeSession,
 	getPrivateSharesDir,
@@ -8,9 +10,7 @@ import {
 	listSessions as listSessionsScript,
 	type SessionAnalysis,
 	validateRemapPath,
-} from "@madisonbullard/opencode-scripts";
-import type { Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin/tool";
+} from "./lib/ingest-session";
 
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;

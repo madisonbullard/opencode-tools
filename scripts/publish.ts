@@ -178,24 +178,7 @@ async function writePackageJson(
 	data: Record<string, unknown>,
 ): Promise<void> {
 	const fullPath = join(ROOT_DIR, packagePath, "package.json");
-	await writeFile(fullPath, JSON.stringify(data, null, "\t") + "\n");
-}
-
-/**
- * Verify that a git tag exists (assumes it was created by the developer)
- */
-async function verifyGitTag(
-	packageName: string,
-	version: string,
-): Promise<boolean> {
-	const tag = `${packageName}@${version}`;
-
-	const result = Bun.spawnSync(["git", "rev-parse", tag], {
-		cwd: ROOT_DIR,
-		stdio: ["pipe", "pipe", "pipe"],
-	});
-
-	return result.exitCode === 0;
+	await writeFile(fullPath, `${JSON.stringify(data, null, "\t")}\n`);
 }
 
 /**

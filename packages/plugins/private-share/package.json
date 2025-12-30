@@ -34,7 +34,6 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
-		"@madisonbullard/opencode-scripts": "workspace:^",
 		"@opencode-ai/plugin": "catalog:",
 		"@opencode-ai/sdk": "catalog:",
 		"zod": "catalog:"

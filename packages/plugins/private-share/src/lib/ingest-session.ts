@@ -15,12 +15,8 @@ import {
 	type PathResolutionResult,
 	resolveProjectPath,
 	verifyRepoPath,
-} from "./detect-repo.js";
-import {
-	extractOriginalPath,
-	getProjectName,
-	remapPaths,
-} from "./path-utils.js";
+} from "./detect-repo";
+import { extractOriginalPath, getProjectName, remapPaths } from "./path-utils";
 
 // Private shares directory
 const PRIVATE_SHARES_DIR = join(homedir(), ".opencode", "private-shares");

@@ -8,7 +8,7 @@
 
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { getCommonSearchPaths, pathExistsSync } from "./path-utils.js";
+import { getCommonSearchPaths, pathExistsSync } from "./path-utils";
 
 export interface RepoSearchResult {
 	found: boolean;
