@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * Interactive publish script for @madisonbullard packages.
+ * Interactive publish script for opencode-tools packages.
  *
  * Usage:
  *   bun scripts/publish.ts                    # Interactive version bump (defaults to patch)
@@ -18,9 +18,9 @@ const ROOT_DIR = join(import.meta.dirname ?? ".", "..");
 
 // Packages in publish order (dependencies first)
 const PACKAGES = [
-	{ name: "@madisonbullard/scripts", path: "packages/scripts" },
+	{ name: "@madisonbullard/opencode-scripts", path: "packages/scripts" },
 	{
-		name: "@madisonbullard/private-share",
+		name: "@madisonbullard/opencode-private-share",
 		path: "packages/plugins/private-share",
 	},
 ];

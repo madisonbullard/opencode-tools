@@ -1,6 +1,6 @@
 {
 	"$schema": "https://json.schemastore.org/package",
-	"name": "@madisonbullard/scripts",
+	"name": "@madisonbullard/opencode-scripts",
 	"version": "0.1.0",
 	"description": "Scripts for opencode-tools",
 	"author": "madisonbullard",

@@ -5,7 +5,7 @@ import {
 	getPrivateSharesDir,
 	ingestSession as ingestSessionScript,
 	listSessions as listSessionsScript,
-} from "@madisonbullard/scripts";
+} from "@madisonbullard/opencode-scripts";
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 

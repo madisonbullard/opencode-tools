@@ -1,5 +1,5 @@
 {
-	"name": "@madisonbullard/private-share",
+	"name": "@madisonbullard/opencode-private-share",
 	"version": "0.1.0",
 	"description": "OpenCode plugin that handles sharing to private AWS infra.",
 	"author": "madisonbullard",
@@ -32,7 +32,7 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
-		"@madisonbullard/scripts": "workspace:^",
+		"@madisonbullard/opencode-scripts": "workspace:^",
 		"@opencode-ai/plugin": "catalog:",
 		"@opencode-ai/sdk": "catalog:",
 		"zod": "catalog:"
