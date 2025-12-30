@@ -121,7 +121,11 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					});
 
 					// Create the private share
-					const shareId = generateId();
+					const sessionDate = new Date(session.time.created);
+					const dateStr = sessionDate.toISOString().split("T")[0]; // YYYY-MM-DD
+					const kebabTitle = toKebabCase(session.title || "untitled");
+					const shareId = `${dateStr}-${kebabTitle}`;
+
 					const privateShare: PrivateShareSession = {
 						id: shareId,
 						sessionID,
@@ -202,12 +206,14 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 };
 
 /**
- * Generate a simple unique ID (similar to ulid but simpler)
+ * Convert a string to kebab-case
  */
-function generateId(): string {
-	const timestamp = Date.now().toString(36);
-	const random = Math.random().toString(36).substring(2, 10);
-	return `${timestamp}-${random}`;
+function toKebabCase(str: string): string {
+	return str
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric chars with hyphens
+		.replace(/^-+|-+$/g, "") // Remove leading/trailing hyphens
+		.replace(/-+/g, "-"); // Collapse multiple hyphens
 }
 
 export default PrivateSharePlugin;
