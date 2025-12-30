@@ -5,6 +5,17 @@
  * Automatically discovers publishable packages by scanning for package.json
  * files with "publishConfig": { "access": "public" }.
  *
+ * For each package, this script:
+ * - Updates the version in package.json
+ * - Runs the build process
+ * - Publishes to npm using `bun publish`
+ * - Creates a GitHub release (requires git tag to be created by developer first)
+ *
+ * Recommended workflow:
+ * 1. Create git tags for each package: git tag @package/name@version
+ * 2. Run this script: bun scripts/publish.ts
+ * 3. Push to GitHub: git push && git push --tags
+ *
  * Usage:
  *   bun scripts/publish.ts                    # Interactive version bump (defaults to patch)
  *   bun scripts/publish.ts --version 0.1.0   # Explicit version (no bump)
@@ -145,20 +156,131 @@ async function writePackageJson(
 	await writeFile(fullPath, JSON.stringify(data, null, "\t") + "\n");
 }
 
-async function prompt(message: string): Promise<string> {
-	process.stdout.write(message);
-	for await (const line of console) {
-		return line;
-	}
-	return "";
+/**
+ * Verify that a git tag exists (assumes it was created by the developer)
+ */
+async function verifyGitTag(
+	packageName: string,
+	version: string,
+): Promise<boolean> {
+	const tag = `${packageName}@${version}`;
+
+	const result = Bun.spawnSync(["git", "rev-parse", tag], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+
+	return result.exitCode === 0;
 }
 
-async function selectBumpType(): Promise<BumpType> {
+/**
+ * Create a GitHub release for the package version
+ */
+async function createGitHubRelease(
+	packageName: string,
+	version: string,
+	isDryRun: boolean,
+): Promise<void> {
+	const tag = `${packageName}@${version}`;
+	const title = `${packageName} v${version}`;
+
+	if (isDryRun) {
+		console.log(`[DRY RUN] Would create GitHub release: ${title}`);
+		return;
+	}
+
+	// Create release using gh CLI
+	const releaseResult = Bun.spawnSync(
+		["gh", "release", "create", tag, "--title", title, "--generate-notes"],
+		{
+			cwd: ROOT_DIR,
+			stdio: ["pipe", "pipe", "pipe"],
+		},
+	);
+
+	if (releaseResult.exitCode !== 0) {
+		console.warn(`Warning: Failed to create GitHub release for ${tag}`);
+	} else {
+		console.log(`Created GitHub release: ${title}`);
+	}
+}
+
+/**
+ * Check if there are any unstaged changes in the git repository
+ */
+async function checkForUnstagedChanges(): Promise<void> {
+	const result = Bun.spawnSync(["git", "diff", "--quiet"], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+
+	if (result.exitCode !== 0) {
+		console.error("Error: You have unstaged changes in the working directory.");
+		console.error("Please commit or stash your changes before publishing.");
+		process.exit(1);
+	}
+}
+
+/**
+ * Stage all package.json files and create a commit with the version bump
+ */
+async function commitVersionBumps(
+	newVersion: string,
+	packages: Package[],
+): Promise<void> {
+	// Stage all updated package.json files
+	for (const pkg of packages) {
+		const pkgJsonPath = join(pkg.path, "package.json");
+		const addResult = Bun.spawnSync(["git", "add", pkgJsonPath], {
+			cwd: ROOT_DIR,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		if (addResult.exitCode !== 0) {
+			console.error(`Failed to stage ${pkgJsonPath}`);
+			process.exit(1);
+		}
+	}
+
+	// Create commit
+	const commitMessage = `chore: bump versions to ${newVersion}`;
+	const commitResult = Bun.spawnSync(["git", "commit", "-m", commitMessage], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+
+	if (commitResult.exitCode !== 0) {
+		console.error("Failed to create version bump commit");
+		process.exit(1);
+	}
+
+	console.log(`Created commit: ${commitMessage}`);
+}
+
+async function prompt(message: string): Promise<string> {
+	process.stdout.write(message);
+
+	return new Promise<string>((resolve) => {
+		const onData = (chunk: Buffer) => {
+			process.stdin.removeListener("data", onData);
+			process.stdin.pause();
+			resolve(chunk.toString().trim());
+		};
+		process.stdin.on("data", onData);
+		process.stdin.resume();
+	});
+}
+
+async function selectBumpType(currentVersion: string): Promise<BumpType> {
+	const patchVersion = bumpVersion(currentVersion, "patch");
+	const minorVersion = bumpVersion(currentVersion, "minor");
+	const majorVersion = bumpVersion(currentVersion, "major");
+
 	console.log("\nSelect version bump type:");
-	console.log("  1) patch (default)");
-	console.log("  2) minor");
-	console.log("  3) major");
-	console.log("  4) none (keep current version)\n");
+	console.log(`  1) patch (${patchVersion}) [default]`);
+	console.log(`  2) minor (${minorVersion})`);
+	console.log(`  3) major (${majorVersion})`);
+	console.log(`  4) none (${currentVersion})\n`);
 
 	const answer = await prompt("Enter choice [1-4]: ");
 
@@ -208,6 +330,12 @@ async function run() {
 		console.log("[DRY RUN] No changes will be made\n");
 	}
 
+	// Check for unstaged changes (unless in dry-run mode)
+	if (!isDryRun) {
+		console.log("Checking git status...");
+		await checkForUnstagedChanges();
+	}
+
 	// Discover and sort packages
 	console.log("Discovering publishable packages...");
 	const discoveredPackages = await discoverPackages();
@@ -254,7 +382,7 @@ async function run() {
 		console.log(`Would bump patch: ${currentVersion} -> ${newVersion}`);
 	} else {
 		// Interactive mode
-		const bumpType = await selectBumpType();
+		const bumpType = await selectBumpType(currentVersion);
 		newVersion = bumpVersion(currentVersion, bumpType);
 		if (bumpType === "none") {
 			console.log(`Keeping version: ${newVersion}`);
@@ -275,6 +403,7 @@ async function run() {
 			console.log(`     - Update ${pkg.path}/package.json version`);
 			console.log(`     - Run: bun run build`);
 			console.log(`     - Run: bun publish (resolves workspace: and catalog:)`);
+			console.log(`     - Create GitHub release: ${pkg.name} v${newVersion}`);
 		}
 		console.log(`\n${"=".repeat(50)}`);
 		console.log("[DRY RUN] No changes were made");
@@ -326,14 +455,27 @@ async function run() {
 		}
 
 		console.log(`Successfully published ${pkg.name}@${newVersion}`);
+
+		// Create GitHub release (assumes git tag was already created by developer)
+		await createGitHubRelease(pkg.name, newVersion, false);
 	}
+
+	// Commit version bumps
+	console.log(`\n${"=".repeat(50)}`);
+	console.log("Committing version bumps...");
+	console.log("=".repeat(50));
+	await commitVersionBumps(newVersion, packages);
 
 	console.log(`\n${"=".repeat(50)}`);
 	console.log("All packages published successfully!");
 	console.log("=".repeat(50));
 }
 
-run().catch((err) => {
-	console.error(err);
-	process.exit(1);
-});
+run()
+	.catch((err) => {
+		console.error(err);
+		process.exit(1);
+	})
+	.finally(() => {
+		process.stdin.pause();
+	});
