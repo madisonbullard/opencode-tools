@@ -274,7 +274,7 @@ async function run() {
 			console.log(`  1. ${pkg.name}@${newVersion}`);
 			console.log(`     - Update ${pkg.path}/package.json version`);
 			console.log(`     - Run: bun run build`);
-			console.log(`     - Run: npm publish`);
+			console.log(`     - Run: bun publish (resolves workspace: and catalog:)`);
 		}
 		console.log(`\n${"=".repeat(50)}`);
 		console.log("[DRY RUN] No changes were made");
@@ -314,9 +314,9 @@ async function run() {
 			process.exit(1);
 		}
 
-		// Publish
+		// Publish using bun publish (which automatically resolves workspace: and catalog:)
 		console.log("Publishing to npm...");
-		const publishResult = Bun.spawnSync(["npm", "publish"], {
+		const publishResult = Bun.spawnSync(["bun", "publish"], {
 			cwd: join(ROOT_DIR, pkg.path),
 			stdio: ["inherit", "inherit", "inherit"],
 		});

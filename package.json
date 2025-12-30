@@ -25,6 +25,7 @@
 		"check": "bun biome check",
 		"fix": "bun check --write ./",
 		"prepare": "husky",
+		"publish": "bun scripts/publish.ts",
 		"typecheck": "bun turbo typecheck"
 	},
 	"devDependencies": {
