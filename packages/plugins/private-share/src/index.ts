@@ -2,9 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+	analyzeSession,
 	getPrivateSharesDir,
 	ingestSession as ingestSessionScript,
 	listSessions as listSessionsScript,
+	type SessionAnalysis,
+	validateRemapPath,
 } from "@madisonbullard/opencode-scripts";
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
@@ -144,16 +147,28 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 			}),
 			"ingest-session": tool({
 				description:
-					"Ingest a previously saved private share session. Creates a new session and injects the conversation history as context. Use 'list' as the shareId to see available sessions.",
+					"Ingest a previously saved private share session. Creates a new session and injects the conversation history as context. Use 'list' as the shareId to see available sessions. If the session was created on a different machine, you may need to provide the projectPath parameter to specify where the repository is located on this machine.",
 				args: {
 					shareId: z
 						.string()
 						.describe(
 							"The share ID of the session to ingest, or 'list' to show available sessions",
 						),
+					projectPath: z
+						.string()
+						.optional()
+						.describe(
+							"Optional: The local path to the project repository. Required if the session was created on a different machine and the repository cannot be auto-detected.",
+						),
+					searchForRepo: z
+						.boolean()
+						.optional()
+						.describe(
+							"Optional: If true, search common directories for the repository by name. Defaults to true if projectPath is not provided.",
+						),
 				},
 				async execute(args, _ctx) {
-					const { shareId } = args;
+					const { shareId, projectPath, searchForRepo = true } = args;
 
 					// Handle listing available sessions
 					if (shareId === "list") {
@@ -173,21 +188,98 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 						return output;
 					}
 
+					// First, analyze the session to check if path remapping is needed
+					let analysis: SessionAnalysis;
+					try {
+						analysis = await analyzeSession(shareId);
+					} catch (error) {
+						// If analysis fails, try to list available sessions to help the user
+						const available = await listSessionsScript();
+						let errorMsg = `Failed to analyze session: ${error instanceof Error ? error.message : String(error)}\n\n`;
+
+						if (available.sessions.length > 0) {
+							errorMsg += `Available sessions:\n`;
+							for (const session of available.sessions) {
+								errorMsg += `  - ${session.shareId}: ${session.title}\n`;
+							}
+						}
+
+						throw new Error(errorMsg);
+					}
+
+					// Determine the path to use for ingestion
+					let remapToPath: string | undefined;
+
+					if (projectPath) {
+						// User provided an explicit path - validate it
+						const validation = await validateRemapPath(projectPath);
+						if (!validation.valid) {
+							throw new Error(
+								`Invalid project path "${projectPath}": ${validation.error}\n\n` +
+									`Please provide a valid path to a git repository.`,
+							);
+						}
+						remapToPath = projectPath;
+					} else if (!analysis.pathResolution.resolved) {
+						// Path doesn't exist and wasn't provided - need user input
+						const { pathResolution, originalPath, projectName } = analysis;
+
+						if (
+							!searchForRepo ||
+							(pathResolution.candidates.length === 0 &&
+								pathResolution.requiresUserInput)
+						) {
+							// No candidates found - ask user to provide path
+							let msg = `The session was created at:\n  ${originalPath}\n\n`;
+							msg += `This path does not exist on this machine, and the repository "${projectName}" could not be found.\n\n`;
+							msg += `Please call this tool again with the projectPath parameter set to the local path where the "${projectName}" repository is located.\n\n`;
+							msg += `Example: ingest-session with shareId="${shareId}" and projectPath="/path/to/${projectName}"`;
+							return msg;
+						}
+
+						if (pathResolution.candidates.length > 1) {
+							// Multiple candidates found - ask user to choose
+							let msg = `The session was created at:\n  ${originalPath}\n\n`;
+							msg += `This path does not exist on this machine. Multiple possible locations for "${projectName}" were found:\n\n`;
+							for (const candidate of pathResolution.candidates) {
+								msg += `  - ${candidate}\n`;
+							}
+							msg += `\nPlease call this tool again with the projectPath parameter set to the correct location.\n\n`;
+							msg += `Example: ingest-session with shareId="${shareId}" and projectPath="${pathResolution.candidates[0]}"`;
+							return msg;
+						}
+
+						// Single candidate found - use it automatically
+						if (pathResolution.newPath) {
+							remapToPath = pathResolution.newPath;
+						}
+					}
+					// If pathResolution.resolved is true, original path exists - no remapping needed
+
 					// Ingest the session using the script
 					try {
-						const result = await ingestSessionScript(shareId);
+						const result = await ingestSessionScript(shareId, {
+							remapToPath,
+						});
 
 						let summary = `Session ingested successfully!\n\n`;
 						summary += `Session ID: ${result.sessionId}\n`;
 						summary += `Title: ${result.sessionTitle}\n`;
 						summary += `Messages: ${result.messageCount}\n`;
 						summary += `Parts: ${result.partCount}\n`;
-						summary += `Diffs: ${result.diffCount}\n\n`;
-						summary += `The session "${result.sessionTitle}" should now appear in your opencode session list.\n`;
+						summary += `Diffs: ${result.diffCount}\n`;
+
+						if (result.pathRemapped) {
+							summary += `\nPath remapped:\n`;
+							summary += `  From: ${result.originalPath}\n`;
+							summary += `  To:   ${result.newPath}\n`;
+						}
+
+						summary += `\nThe session "${result.sessionTitle}" should now appear in your opencode session list.\n`;
 
 						return summary;
 					} catch (error) {
-						// If ingestion fails, try to list available sessions to help the user
+						// If ingestion fails, provide helpful error message
 						const available = await listSessionsScript();
 						let errorMsg = `Failed to ingest session: ${error instanceof Error ? error.message : String(error)}\n\n`;
 

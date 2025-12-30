@@ -41,6 +41,14 @@
 		"./ingest-session": {
 			"types": "./dist/ingest-session.d.ts",
 			"default": "./dist/ingest-session.js"
+		},
+		"./detect-repo": {
+			"types": "./dist/detect-repo.d.ts",
+			"default": "./dist/detect-repo.js"
+		},
+		"./path-utils": {
+			"types": "./dist/path-utils.d.ts",
+			"default": "./dist/path-utils.js"
 		}
 	}
 }

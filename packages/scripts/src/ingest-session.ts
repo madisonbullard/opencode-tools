@@ -4,11 +4,23 @@
  *
  * This creates native opencode session data from a private-share file,
  * allowing the session to appear in the session list and be fully navigable.
+ *
+ * Supports path remapping for sessions created on different machines.
  */
 
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+	type PathResolutionResult,
+	resolveProjectPath,
+	verifyRepoPath,
+} from "./detect-repo.js";
+import {
+	extractOriginalPath,
+	getProjectName,
+	remapPaths,
+} from "./path-utils.js";
 
 // Private shares directory
 const PRIVATE_SHARES_DIR = join(homedir(), ".opencode", "private-shares");
@@ -122,6 +134,25 @@ export interface IngestResult {
 	messageCount: number;
 	partCount: number;
 	diffCount: number;
+	pathRemapped?: boolean;
+	originalPath?: string;
+	newPath?: string;
+}
+
+export interface IngestOptions {
+	/**
+	 * If provided, remap all paths from the original project path to this path.
+	 * Use this when the session was created on a different machine.
+	 */
+	remapToPath?: string;
+}
+
+export interface SessionAnalysis {
+	shareId: string;
+	title: string;
+	originalPath: string;
+	projectName: string;
+	pathResolution: PathResolutionResult;
 }
 
 export interface ListSessionsResult {
@@ -225,7 +256,7 @@ async function writeSessionDiff(
 /**
  * Resolve a share ID or path to a full file path
  */
-function resolveFilePath(arg: string): string {
+function resolveShareFilePath(arg: string): string {
 	// If it looks like a path (contains / or ends with .json), use it directly
 	if (arg.includes("/") || arg.endsWith(".json")) {
 		return arg;
@@ -235,18 +266,95 @@ function resolveFilePath(arg: string): string {
 }
 
 /**
- * Main function to ingest a session
+ * Analyze a session to determine if path remapping is needed.
+ * This should be called before ingestSession to check if user input is required.
  */
-export async function ingestSession(
+export async function analyzeSession(
 	filePathOrShareId: string,
-): Promise<IngestResult> {
-	const filePath = resolveFilePath(filePathOrShareId);
+): Promise<SessionAnalysis> {
+	const filePath = resolveShareFilePath(filePathOrShareId);
+	const shareId = filePathOrShareId.includes("/")
+		? (filePathOrShareId.split("/").pop()?.replace(".json", "") ??
+			filePathOrShareId)
+		: filePathOrShareId;
 
 	// Read and parse the private-share file
 	const content = await readFile(filePath, "utf-8");
 	const privateShare: PrivateShareSession = JSON.parse(content);
 
-	// Extract data by type
+	// Get session title
+	const sessionEntry = privateShare.data.find((d) => d.type === "session") as
+		| { type: "session"; data: SessionData }
+		| undefined;
+	const title = sessionEntry?.data?.title ?? "Unknown";
+
+	// Extract original path
+	const originalPath = extractOriginalPath(privateShare);
+	if (!originalPath) {
+		throw new Error("Could not determine original project path from session");
+	}
+
+	const projectName = getProjectName(originalPath);
+
+	// Check if we can resolve the path
+	const pathResolution = await resolveProjectPath(originalPath, projectName);
+
+	return {
+		shareId,
+		title,
+		originalPath,
+		projectName,
+		pathResolution,
+	};
+}
+
+/**
+ * Validate a user-provided path for remapping.
+ */
+export async function validateRemapPath(
+	path: string,
+): Promise<{ valid: boolean; error?: string }> {
+	return verifyRepoPath(path);
+}
+
+/**
+ * Main function to ingest a session
+ */
+export async function ingestSession(
+	filePathOrShareId: string,
+	options: IngestOptions = {},
+): Promise<IngestResult> {
+	const filePath = resolveShareFilePath(filePathOrShareId);
+
+	// Read and parse the private-share file
+	const content = await readFile(filePath, "utf-8");
+	let privateShare: PrivateShareSession = JSON.parse(content);
+
+	// Handle path remapping if needed
+	const originalPath = extractOriginalPath(privateShare);
+	let pathRemapped = false;
+	let newPath: string | undefined;
+
+	if (options.remapToPath && originalPath) {
+		// Validate the target path
+		const validation = await verifyRepoPath(options.remapToPath);
+		if (!validation.valid) {
+			throw new Error(
+				`Invalid remap path: ${validation.error ?? "Path is not a valid git repository"}`,
+			);
+		}
+
+		// Apply path remapping to the entire data structure
+		privateShare = remapPaths(
+			privateShare,
+			originalPath,
+			options.remapToPath,
+		) as PrivateShareSession;
+		pathRemapped = true;
+		newPath = options.remapToPath;
+	}
+
+	// Extract data by type (after remapping)
 	const sessionEntry = privateShare.data.find((d) => d.type === "session") as
 		| { type: "session"; data: SessionData }
 		| undefined;
@@ -304,6 +412,9 @@ export async function ingestSession(
 		messageCount: messageEntries.length,
 		partCount: partEntries.length,
 		diffCount: diffEntry?.data.length ?? 0,
+		pathRemapped,
+		originalPath: originalPath ?? undefined,
+		newPath,
 	};
 }
 
