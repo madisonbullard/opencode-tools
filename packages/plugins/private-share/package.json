@@ -3,6 +3,15 @@
 	"version": "0.1.0",
 	"description": "OpenCode plugin that handles sharing to private AWS infra.",
 	"author": "madisonbullard",
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/madisonbullard/opencode-tools.git",
+		"directory": "packages/plugins/private-share"
+	},
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -10,7 +19,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "bun build src/index.ts --outdir dist --target node",
+		"build": "tsc",
 		"prepublishOnly": "bun run build",
 		"typecheck": "tsc --noEmit"
 	},
@@ -23,7 +32,7 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
-		"@madisonbullard/scripts": "workspace:*",
+		"@madisonbullard/scripts": "workspace:^",
 		"@opencode-ai/plugin": "catalog:",
 		"@opencode-ai/sdk": "catalog:",
 		"zod": "catalog:"

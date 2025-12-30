@@ -3,8 +3,25 @@
 	"name": "@madisonbullard/scripts",
 	"version": "0.1.0",
 	"description": "Scripts for opencode-tools",
+	"author": "madisonbullard",
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/madisonbullard/opencode-tools.git",
+		"directory": "packages/scripts"
+	},
 	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist"
+	],
 	"scripts": {
+		"build": "tsc",
+		"prepublishOnly": "bun run build",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
@@ -12,7 +29,13 @@
 		"typescript": "catalog:"
 	},
 	"exports": {
-		".": "./src/index.ts",
-		"./ingest-session": "./src/ingest-session.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./ingest-session": {
+			"types": "./dist/ingest-session.d.ts",
+			"default": "./dist/ingest-session.js"
+		}
 	}
 }

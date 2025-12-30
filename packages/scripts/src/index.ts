@@ -4,4 +4,4 @@ export {
 	ingestSession,
 	type ListSessionsResult,
 	listSessions,
-} from "./ingest-session.ts";
+} from "./ingest-session.js";

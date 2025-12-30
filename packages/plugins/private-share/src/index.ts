@@ -6,7 +6,8 @@ import {
 	ingestSession as ingestSessionScript,
 	listSessions as listSessionsScript,
 } from "@madisonbullard/scripts";
-import { type Plugin, tool } from "@opencode-ai/plugin";
+import type { Plugin } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin/tool";
 
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;
