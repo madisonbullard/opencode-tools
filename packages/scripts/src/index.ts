@@ -27,3 +27,17 @@ export {
 	pathExistsSync,
 	remapPaths,
 } from "./path-utils.js";
+export {
+	type ArchiveAnalysis,
+	analyzeArchive,
+	collectSessionFiles,
+	createSessionArchive,
+	type ExtractArchiveOptions,
+	type ExtractArchiveResult,
+	extractSessionArchive,
+	getSessionArchivesDir,
+	listSessionArchives,
+	type SessionArchiveInfo,
+	type SessionFile,
+	validateArchiveRemapPath,
+} from "./session-archive.js";

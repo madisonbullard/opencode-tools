@@ -49,6 +49,10 @@
 		"./path-utils": {
 			"types": "./dist/path-utils.d.ts",
 			"default": "./dist/path-utils.js"
+		},
+		"./session-archive": {
+			"types": "./dist/session-archive.d.ts",
+			"default": "./dist/session-archive.js"
 		}
 	}
 }

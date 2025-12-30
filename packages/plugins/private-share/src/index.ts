@@ -1,13 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
-	analyzeSession,
-	getPrivateSharesDir,
-	ingestSession as ingestSessionScript,
-	listSessions as listSessionsScript,
-	type SessionAnalysis,
-	validateRemapPath,
+	type ArchiveAnalysis,
+	analyzeArchive,
+	createSessionArchive,
+	extractSessionArchive,
+	getSessionArchivesDir,
+	listSessionArchives,
+	type SessionFile,
+	validateArchiveRemapPath,
 } from "@madisonbullard/opencode-scripts";
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
@@ -15,144 +14,48 @@ import { tool } from "@opencode-ai/plugin/tool";
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;
 
-/**
- * Data structure that mirrors what would be sent to a remote API.
- * This matches the format used by opencode's ShareNext.sync function.
- */
-type ShareData =
-	| { type: "session"; data: unknown }
-	| { type: "message"; data: unknown }
-	| { type: "part"; data: unknown }
-	| { type: "session_diff"; data: unknown[] }
-	| { type: "model"; data: ModelInfo[] };
-
-interface ModelInfo {
-	id: string;
-	providerID: string;
-	name: string;
-}
-
-interface PrivateShareSession {
-	id: string;
-	sessionID: string;
-	createdAt: number;
-	data: ShareData[];
-}
-
-const PRIVATE_SHARES_DIR = join(homedir(), ".opencode", "private-shares");
-
 export const PrivateSharePlugin: Plugin = async ({ client }) => {
 	return {
 		tool: {
 			"private-share": tool({
 				description:
-					"Create a private share of the current session. Captures the session data and saves it locally for later sharing.",
+					"Create a private share of the current session. Scans the opencode data directories for files related to this session (messages, parts, diffs, snapshots) and creates a zip archive that can be shared and later ingested on another machine.",
 				args: {},
 				async execute(_args, ctx) {
 					const { sessionID } = ctx;
 
-					// Fetch session info (v1 SDK uses path.id)
-					const sessionResponse = await client.session.get({
-						path: { id: sessionID },
-					});
-					if (sessionResponse.error) {
+					try {
+						const { archivePath, archiveId, info } =
+							await createSessionArchive(sessionID);
+
+						let result = `Private share created successfully!\n`;
+						result += `Archive ID: ${archiveId}\n`;
+						result += `Saved to: ${archivePath}\n\n`;
+						result += `Session: ${info.title}\n`;
+						result += `Files included: ${info.files.length}\n`;
+						result += `  - Session: ${info.files.filter((f: SessionFile) => f.type === "session").length}\n`;
+						result += `  - Messages: ${info.files.filter((f: SessionFile) => f.type === "message").length}\n`;
+						result += `  - Parts: ${info.files.filter((f: SessionFile) => f.type === "part").length}\n`;
+						result += `  - Diffs: ${info.files.filter((f: SessionFile) => f.type === "session_diff").length}\n`;
+						result += `  - Project: ${info.files.filter((f: SessionFile) => f.type === "project").length}\n`;
+						result += `  - Snapshots: ${info.files.filter((f: SessionFile) => f.type === "snapshot").length}`;
+
+						return result;
+					} catch (error) {
 						throw new Error(
-							`Failed to fetch session: ${JSON.stringify(sessionResponse.error)}`,
+							`Failed to create session archive: ${error instanceof Error ? error.message : String(error)}`,
 						);
 					}
-					const session = sessionResponse.data;
-
-					// Fetch messages with parts
-					const messagesResponse = await client.session.messages({
-						path: { id: sessionID },
-					});
-					if (messagesResponse.error) {
-						throw new Error(
-							`Failed to fetch messages: ${JSON.stringify(messagesResponse.error)}`,
-						);
-					}
-					const messagesWithParts = messagesResponse.data ?? [];
-
-					// Fetch session diffs
-					const diffResponse = await client.session.diff({
-						path: { id: sessionID },
-					});
-					const diffs = diffResponse.data ?? [];
-
-					// Extract unique models from user messages
-					const modelSet = new Map<string, ModelInfo>();
-					for (const { info } of messagesWithParts) {
-						if (info.role === "user") {
-							const userMsg = info as {
-								model: { providerID: string; modelID: string };
-							};
-							const key = `${userMsg.model.providerID}:${userMsg.model.modelID}`;
-							if (!modelSet.has(key)) {
-								modelSet.set(key, {
-									id: userMsg.model.modelID,
-									providerID: userMsg.model.providerID,
-									name: userMsg.model.modelID, // We don't have the display name, use modelID
-								});
-							}
-						}
-					}
-
-					// Build the share data array in the same format as ShareNext
-					const shareData: ShareData[] = [];
-
-					// Add session info
-					shareData.push({ type: "session", data: session });
-
-					// Add all messages
-					for (const { info } of messagesWithParts) {
-						shareData.push({ type: "message", data: info });
-					}
-
-					// Add all parts
-					for (const { parts } of messagesWithParts) {
-						for (const part of parts) {
-							shareData.push({ type: "part", data: part });
-						}
-					}
-
-					// Add session diffs
-					shareData.push({ type: "session_diff", data: diffs });
-
-					// Add models
-					shareData.push({
-						type: "model",
-						data: Array.from(modelSet.values()),
-					});
-
-					// Create the private share
-					const sessionDate = new Date(session.time.created);
-					const dateStr = sessionDate.toISOString().split("T")[0]; // YYYY-MM-DD
-					const kebabTitle = toKebabCase(session.title || "untitled");
-					const shareId = `${dateStr}-${kebabTitle}`;
-
-					const privateShare: PrivateShareSession = {
-						id: shareId,
-						sessionID,
-						createdAt: Date.now(),
-						data: shareData,
-					};
-
-					// Ensure directory exists and write file
-					await mkdir(PRIVATE_SHARES_DIR, { recursive: true });
-					const filePath = join(PRIVATE_SHARES_DIR, `${shareId}.json`);
-					await writeFile(filePath, JSON.stringify(privateShare, null, 2));
-
-					return `Private share created successfully!\nShare ID: ${shareId}\nSaved to: ${filePath}`;
 				},
 			}),
 			"ingest-session": tool({
 				description:
-					"Ingest a previously saved private share session. Creates a new session and injects the conversation history as context. Use 'list' as the shareId to see available sessions. If the session was created on a different machine, you may need to provide the projectPath parameter to specify where the repository is located on this machine.",
+					"Ingest a previously saved session archive. Extracts the zip archive and places the session files in the appropriate opencode data directories. Use 'list' as the archiveId to see available archives. If the session was created on a different machine, you may need to provide the projectPath parameter to specify where the repository is located on this machine.",
 				args: {
 					shareId: z
 						.string()
 						.describe(
-							"The share ID of the session to ingest, or 'list' to show available sessions",
+							"The archive ID of the session to ingest, or 'list' to show available archives",
 						),
 					projectPath: z
 						.string()
@@ -170,37 +73,36 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 				async execute(args, _ctx) {
 					const { shareId, projectPath, searchForRepo = true } = args;
 
-					// Handle listing available sessions
+					// Handle listing available archives
 					if (shareId === "list") {
-						const result = await listSessionsScript();
-						if (result.sessions.length === 0) {
-							return `No sessions found in ${getPrivateSharesDir()}\nCreate a private share first using the private-share tool.`;
+						const archives = await listSessionArchives();
+						if (archives.length === 0) {
+							return `No session archives found in ${getSessionArchivesDir()}\nCreate a private share first using the private-share tool.`;
 						}
 
-						let output = `Available sessions (${result.sessions.length} total):\n\n`;
-						for (const session of result.sessions) {
-							output += `  ${session.shareId}\n`;
-							output += `    Title: ${session.title}\n`;
-							output += `    Created: ${session.created}\n`;
-							output += `    Messages: ${session.messageCount}\n\n`;
+						let output = `Available session archives (${archives.length} total):\n\n`;
+						for (const archive of archives) {
+							output += `  ${archive.archiveId}\n`;
+							output += `    Created: ${archive.created}\n`;
+							output += `    Path: ${archive.archivePath}\n\n`;
 						}
-						output += `\nUse ingest-session with a shareId to restore a session.`;
+						output += `\nUse ingest-session with a shareId to restore an archive.`;
 						return output;
 					}
 
-					// First, analyze the session to check if path remapping is needed
-					let analysis: SessionAnalysis;
+					// First, analyze the archive to check if path remapping is needed
+					let analysis: ArchiveAnalysis;
 					try {
-						analysis = await analyzeSession(shareId);
+						analysis = await analyzeArchive(shareId);
 					} catch (error) {
-						// If analysis fails, try to list available sessions to help the user
-						const available = await listSessionsScript();
-						let errorMsg = `Failed to analyze session: ${error instanceof Error ? error.message : String(error)}\n\n`;
+						// If analysis fails, try to list available archives to help the user
+						const available = await listSessionArchives();
+						let errorMsg = `Failed to analyze archive: ${error instanceof Error ? error.message : String(error)}\n\n`;
 
-						if (available.sessions.length > 0) {
-							errorMsg += `Available sessions:\n`;
-							for (const session of available.sessions) {
-								errorMsg += `  - ${session.shareId}: ${session.title}\n`;
+						if (available.length > 0) {
+							errorMsg += `Available archives:\n`;
+							for (const archive of available) {
+								errorMsg += `  - ${archive.archiveId}\n`;
 							}
 						}
 
@@ -212,7 +114,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 
 					if (projectPath) {
 						// User provided an explicit path - validate it
-						const validation = await validateRemapPath(projectPath);
+						const validation = await validateArchiveRemapPath(projectPath);
 						if (!validation.valid) {
 							throw new Error(
 								`Invalid project path "${projectPath}": ${validation.error}\n\n` +
@@ -256,18 +158,16 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					}
 					// If pathResolution.resolved is true, original path exists - no remapping needed
 
-					// Ingest the session using the script
+					// Extract the archive
 					try {
-						const result = await ingestSessionScript(shareId, {
+						const result = await extractSessionArchive(shareId, {
 							remapToPath,
 						});
 
-						let summary = `Session ingested successfully!\n\n`;
+						let summary = `Session archive extracted successfully!\n\n`;
 						summary += `Session ID: ${result.sessionId}\n`;
 						summary += `Title: ${result.sessionTitle}\n`;
-						summary += `Messages: ${result.messageCount}\n`;
-						summary += `Parts: ${result.partCount}\n`;
-						summary += `Diffs: ${result.diffCount}\n`;
+						summary += `Files extracted: ${result.fileCount}\n`;
 
 						if (result.pathRemapped) {
 							summary += `\nPath remapped:\n`;
@@ -279,14 +179,14 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 
 						return summary;
 					} catch (error) {
-						// If ingestion fails, provide helpful error message
-						const available = await listSessionsScript();
-						let errorMsg = `Failed to ingest session: ${error instanceof Error ? error.message : String(error)}\n\n`;
+						// If extraction fails, provide helpful error message
+						const available = await listSessionArchives();
+						let errorMsg = `Failed to extract archive: ${error instanceof Error ? error.message : String(error)}\n\n`;
 
-						if (available.sessions.length > 0) {
-							errorMsg += `Available sessions:\n`;
-							for (const session of available.sessions) {
-								errorMsg += `  - ${session.shareId}: ${session.title}\n`;
+						if (available.length > 0) {
+							errorMsg += `Available archives:\n`;
+							for (const archive of available) {
+								errorMsg += `  - ${archive.archiveId}\n`;
 							}
 						}
 
@@ -297,16 +197,5 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 		},
 	};
 };
-
-/**
- * Convert a string to kebab-case
- */
-function toKebabCase(str: string): string {
-	return str
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric chars with hyphens
-		.replace(/^-+|-+$/g, "") // Remove leading/trailing hyphens
-		.replace(/-+/g, "-"); // Collapse multiple hyphens
-}
 
 export default PrivateSharePlugin;
