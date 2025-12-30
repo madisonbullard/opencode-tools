@@ -23,7 +23,7 @@ interface ModelInfo {
 	name: string;
 }
 
-interface PrivateShareSnapshot {
+interface PrivateShareSession {
 	id: string;
 	sessionID: string;
 	createdAt: number;
@@ -33,30 +33,32 @@ interface PrivateShareSnapshot {
 const PRIVATE_SHARES_DIR = join(homedir(), ".opencode", "private-shares");
 
 /**
- * List all available snapshots in the private shares directory
+ * List all available sessions in the private shares directory
  */
-async function listAvailableSnapshots(): Promise<string> {
+async function listAvailableSessions(): Promise<string> {
 	try {
 		const files = await readdir(PRIVATE_SHARES_DIR);
 		const jsonFiles = files.filter((f) => f.endsWith(".json"));
 
 		if (jsonFiles.length === 0) {
-			return "No snapshots found in " + PRIVATE_SHARES_DIR;
+			return "No sessions found in " + PRIVATE_SHARES_DIR;
 		}
 
-		let result = `Available snapshots (${jsonFiles.length} total):\n\n`;
+		let result = `Available sessions (${jsonFiles.length} total):\n\n`;
 
 		for (const file of jsonFiles) {
 			const shareId = file.replace(".json", "");
 			try {
 				const content = await readFile(join(PRIVATE_SHARES_DIR, file), "utf-8");
-				const snapshot: PrivateShareSnapshot = JSON.parse(content);
-				const sessionData = snapshot.data.find((d) => d.type === "session");
+				const privateShare: PrivateShareSession = JSON.parse(content);
+				const sessionData = privateShare.data.find(
+					(d: ShareData) => d.type === "session",
+				);
 				const title =
 					(sessionData?.data as { title?: string })?.title ?? "Unknown";
-				const created = new Date(snapshot.createdAt).toLocaleString();
-				const messageCount = snapshot.data.filter(
-					(d) => d.type === "message",
+				const created = new Date(privateShare.createdAt).toLocaleString();
+				const messageCount = privateShare.data.filter(
+					(d: ShareData) => d.type === "message",
 				).length;
 
 				result += `  ${shareId}\n`;
@@ -68,10 +70,10 @@ async function listAvailableSnapshots(): Promise<string> {
 			}
 		}
 
-		result += `\nUse ingest-snapshot with a shareId to restore a snapshot.`;
+		result += `\nUse ingest-session with a shareId to restore a session.`;
 		return result;
 	} catch {
-		return `No snapshots directory found at ${PRIVATE_SHARES_DIR}\nCreate a snapshot first using the private-share tool.`;
+		return `No private shares directory found at ${PRIVATE_SHARES_DIR}\nCreate a private share first using the private-share tool.`;
 	}
 }
 
@@ -80,7 +82,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 		tool: {
 			"private-share": tool({
 				description:
-					"Create a private share of the current session. Captures a snapshot of the session data and saves it locally for later sharing.",
+					"Create a private share of the current session. Captures the session data and saves it locally for later sharing.",
 				args: {},
 				async execute(_args, ctx) {
 					const { sessionID } = ctx;
@@ -158,9 +160,9 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 						data: Array.from(modelSet.values()),
 					});
 
-					// Create the snapshot
+					// Create the private share
 					const shareId = generateId();
-					const snapshot: PrivateShareSnapshot = {
+					const privateShare: PrivateShareSession = {
 						id: shareId,
 						sessionID,
 						createdAt: Date.now(),
@@ -170,53 +172,61 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					// Ensure directory exists and write file
 					await mkdir(PRIVATE_SHARES_DIR, { recursive: true });
 					const filePath = join(PRIVATE_SHARES_DIR, `${shareId}.json`);
-					await writeFile(filePath, JSON.stringify(snapshot, null, 2));
+					await writeFile(filePath, JSON.stringify(privateShare, null, 2));
 
 					return `Private share created successfully!\nShare ID: ${shareId}\nSaved to: ${filePath}`;
 				},
 			}),
-			"ingest-snapshot": tool({
+			"ingest-session": tool({
 				description:
-					"Ingest a previously saved private share snapshot. Creates a new session and injects the conversation history as context. Use 'list' as the shareId to see available snapshots.",
+					"Ingest a previously saved private share session. Creates a new session and injects the conversation history as context. Use 'list' as the shareId to see available sessions.",
 				args: {
 					shareId: z
 						.string()
 						.describe(
-							"The share ID of the snapshot to ingest, or 'list' to show available snapshots",
+							"The share ID of the session to ingest, or 'list' to show available sessions",
 						),
 				},
 				async execute(args, _ctx) {
 					const { shareId } = args;
 
-					// Handle listing available snapshots
+					// Handle listing available sessions
 					if (shareId === "list") {
-						return await listAvailableSnapshots();
+						return await listAvailableSessions();
 					}
 
-					// Read the snapshot file
+					// Read the private share file
 					const filePath = join(PRIVATE_SHARES_DIR, `${shareId}.json`);
-					let snapshotContent: string;
+					let fileContent: string;
 					try {
-						snapshotContent = await readFile(filePath, "utf-8");
+						fileContent = await readFile(filePath, "utf-8");
 					} catch {
-						// Try to list available snapshots to help the user
-						const available = await listAvailableSnapshots();
-						throw new Error(
-							`Failed to read snapshot file: ${filePath}\n\n${available}`,
-						);
+						// Try to list available sessions to help the user
+						const available = await listAvailableSessions();
+						throw new Error(`Failed to read file: ${filePath}\n\n${available}`);
 					}
 
-					const snapshot: PrivateShareSnapshot = JSON.parse(snapshotContent);
+					const privateShare: PrivateShareSession = JSON.parse(fileContent);
 
-					// Extract data from the snapshot
-					const sessionData = snapshot.data.find((d) => d.type === "session");
-					const messageData = snapshot.data.filter((d) => d.type === "message");
-					const partData = snapshot.data.filter((d) => d.type === "part");
-					const diffData = snapshot.data.find((d) => d.type === "session_diff");
-					const modelData = snapshot.data.find((d) => d.type === "model");
+					// Extract data from the private share
+					const sessionData = privateShare.data.find(
+						(d: ShareData) => d.type === "session",
+					);
+					const messageData = privateShare.data.filter(
+						(d: ShareData) => d.type === "message",
+					);
+					const partData = privateShare.data.filter(
+						(d: ShareData) => d.type === "part",
+					);
+					const diffData = privateShare.data.find(
+						(d: ShareData) => d.type === "session_diff",
+					);
+					const modelData = privateShare.data.find(
+						(d: ShareData) => d.type === "model",
+					);
 
 					if (!sessionData) {
-						throw new Error("Snapshot does not contain session data");
+						throw new Error("File does not contain session data");
 					}
 
 					const originalSession = sessionData.data as {
@@ -270,7 +280,7 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 					// We'll inject the full conversation as a synthetic context message
 					let conversationContext = "=== RESTORED CONVERSATION HISTORY ===\n\n";
 					conversationContext += `Original Session: ${originalSession.title}\n`;
-					conversationContext += `Captured: ${new Date(snapshot.createdAt).toISOString()}\n\n`;
+					conversationContext += `Captured: ${new Date(privateShare.createdAt).toISOString()}\n\n`;
 
 					for (const msg of messages) {
 						const role = msg.role === "user" ? "USER" : "ASSISTANT";
@@ -327,11 +337,11 @@ export const PrivateSharePlugin: Plugin = async ({ client }) => {
 						);
 					}
 
-					let summary = `Snapshot ingested successfully!\n\n`;
-					summary += `Original Session ID: ${snapshot.sessionID}\n`;
+					let summary = `Session ingested successfully!\n\n`;
+					summary += `Original Session ID: ${privateShare.sessionID}\n`;
 					summary += `New Session ID: ${newSession.id}\n`;
 					summary += `Original Title: ${originalSession.title}\n`;
-					summary += `Snapshot Created: ${new Date(snapshot.createdAt).toISOString()}\n\n`;
+					summary += `Created: ${new Date(privateShare.createdAt).toISOString()}\n\n`;
 
 					summary += `\n=== Next Steps ===\n`;
 					summary += `The conversation history has been injected into the new session as context.\n`;
