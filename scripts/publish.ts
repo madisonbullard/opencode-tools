@@ -29,7 +29,7 @@
  *   bun scripts/publish.ts --dry-run         # Show what would be published without making changes
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { Glob } from "bun";
 
@@ -261,7 +261,7 @@ async function checkForUnstagedChanges(): Promise<void> {
 }
 
 /**
- * Stage all package.json files and create a commit with the version bump
+ * Stage all package.json files, bun.lock, and create a commit with the version bump
  */
 async function commitVersionBumps(
 	newVersion: string,
@@ -279,6 +279,17 @@ async function commitVersionBumps(
 			console.error(`Failed to stage ${pkgJsonPath}`);
 			process.exit(1);
 		}
+	}
+
+	// Stage the regenerated bun.lock
+	const addLockResult = Bun.spawnSync(["git", "add", "bun.lock"], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+
+	if (addLockResult.exitCode !== 0) {
+		console.error("Failed to stage bun.lock");
+		process.exit(1);
 	}
 
 	// Create commit
@@ -450,13 +461,21 @@ async function run() {
 		console.log("[DRY RUN] Summary of what would happen:");
 		console.log("=".repeat(50));
 		console.log(`\nVersion: ${currentVersion} -> ${newVersion}\n`);
-		console.log("Packages to publish (in order):");
+		console.log("Phase 1: Update all package.json versions");
 		for (const pkg of packages) {
-			console.log(`  1. ${pkg.name}@${newVersion}`);
-			console.log(`     - Update ${pkg.path}/package.json version`);
+			console.log(`  - ${pkg.path}/package.json -> ${newVersion}`);
+		}
+		console.log("\nPhase 2: Regenerate bun.lock (delete and run bun install)");
+		console.log("\nPhase 3: Build and publish packages (in dependency order):");
+		for (let i = 0; i < packages.length; i++) {
+			const pkg = packages[i];
+			if (!pkg) continue;
+			console.log(`  ${i + 1}. ${pkg.name}@${newVersion}`);
 			console.log(`     - Run: bun run build`);
 			console.log(`     - Run: bun publish (resolves workspace: and catalog:)`);
-			console.log(`     - Create GitHub release: ${pkg.name} v${newVersion}`);
+			if (!isCanary) {
+				console.log(`     - Create GitHub release: ${pkg.name} v${newVersion}`);
+			}
 		}
 		console.log(`\n${"=".repeat(50)}`);
 		console.log("[DRY RUN] No changes were made");
@@ -473,17 +492,45 @@ async function run() {
 		process.exit(0);
 	}
 
-	// Update versions and publish each package
+	// Phase 1: Update ALL package.json versions first
+	// This ensures workspace:^ dependencies resolve to the new version
+	console.log(`\n${"=".repeat(50)}`);
+	console.log("Updating all package versions...");
+	console.log("=".repeat(50));
 	for (const pkg of packages) {
-		console.log(`\n${"=".repeat(50)}`);
-		console.log(`Publishing ${pkg.name}...`);
-		console.log("=".repeat(50));
-
-		// Update version in package.json
 		const pkgJson = await readPackageJson(pkg.path);
 		pkgJson.version = newVersion;
 		await writePackageJson(pkg.path, pkgJson);
 		console.log(`Updated ${pkg.path}/package.json to version ${newVersion}`);
+	}
+
+	// Phase 2: Regenerate lockfile to sync workspace versions
+	// bun publish uses versions from bun.lock for workspace: dependencies,
+	// so we must delete and regenerate it after updating package.json versions
+	// See: https://github.com/oven-sh/bun/issues/20477
+	console.log(`\n${"=".repeat(50)}`);
+	console.log("Regenerating lockfile...");
+	console.log("=".repeat(50));
+	try {
+		await unlink(join(ROOT_DIR, "bun.lock"));
+		console.log("Deleted bun.lock");
+	} catch {
+		// Lockfile may not exist
+	}
+	const installResult = Bun.spawnSync(["bun", "install"], {
+		cwd: ROOT_DIR,
+		stdio: ["inherit", "inherit", "inherit"],
+	});
+	if (installResult.exitCode !== 0) {
+		console.error("Failed to regenerate lockfile");
+		process.exit(1);
+	}
+
+	// Phase 3: Build and publish each package in dependency order
+	for (const pkg of packages) {
+		console.log(`\n${"=".repeat(50)}`);
+		console.log(`Publishing ${pkg.name}...`);
+		console.log("=".repeat(50));
 
 		// Build
 		console.log("Building...");
@@ -531,8 +578,18 @@ async function run() {
 			pkgJson.version = currentVersion;
 			await writePackageJson(pkg.path, pkgJson);
 		}
+		// Regenerate lockfile to restore original workspace versions
+		try {
+			await unlink(join(ROOT_DIR, "bun.lock"));
+		} catch {
+			// Lockfile may not exist
+		}
+		Bun.spawnSync(["bun", "install"], {
+			cwd: ROOT_DIR,
+			stdio: ["inherit", "inherit", "inherit"],
+		});
 		console.log(
-			"Reverted package.json versions (canary versions are not committed)",
+			"Reverted package.json versions and lockfile (canary versions are not committed)",
 		);
 	} else {
 		// Commit version bumps
