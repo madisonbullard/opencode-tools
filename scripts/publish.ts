@@ -25,6 +25,7 @@
  *   bun scripts/publish.ts --patch / -p      # Patch bump
  *   bun scripts/publish.ts --minor / -m      # Minor bump
  *   bun scripts/publish.ts --major / -M      # Major bump
+ *   bun scripts/publish.ts --canary / -c     # Canary release (published with "canary" tag)
  *   bun scripts/publish.ts --dry-run         # Show what would be published without making changes
  */
 
@@ -123,12 +124,28 @@ function sortByDependencies(packages: Package[]): Package[] {
 	return sorted;
 }
 
-type BumpType = "major" | "minor" | "patch" | "none";
+type BumpType = "major" | "minor" | "patch" | "canary" | "none";
+
+/**
+ * Get the short git commit hash for canary versions
+ */
+function getGitCommitHash(): string {
+	const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+	if (result.exitCode !== 0) {
+		return Date.now().toString();
+	}
+	return result.stdout.toString().trim();
+}
 
 function bumpVersion(current: string, type: BumpType): string {
 	if (type === "none") return current;
 
-	const parts = current.split(".").map(Number);
+	// Strip any existing prerelease suffix for base version calculation
+	const baseVersion = current.split("-")[0] ?? current;
+	const parts = baseVersion.split(".").map(Number);
 	const major = parts[0] ?? 0;
 	const minor = parts[1] ?? 0;
 	const patch = parts[2] ?? 0;
@@ -140,6 +157,11 @@ function bumpVersion(current: string, type: BumpType): string {
 			return `${major}.${minor + 1}.0`;
 		case "patch":
 			return `${major}.${minor}.${patch + 1}`;
+		case "canary": {
+			// Canary builds on next patch version with prerelease identifier
+			const commitHash = getGitCommitHash();
+			return `${major}.${minor}.${patch + 1}-canary.${commitHash}`;
+		}
 	}
 }
 
@@ -331,6 +353,8 @@ function parseArgs(): { version?: string; bump?: BumpType; dryRun?: boolean } {
 			result.bump = "minor";
 		} else if (arg === "--major" || arg === "-M") {
 			result.bump = "major";
+		} else if (arg === "--canary" || arg === "-c") {
+			result.bump = "canary";
 		} else if (arg === "--dry-run" || arg === "-d") {
 			result.dryRun = true;
 		}
@@ -342,17 +366,25 @@ function parseArgs(): { version?: string; bump?: BumpType; dryRun?: boolean } {
 async function run() {
 	const args = parseArgs();
 	const isDryRun = args.dryRun ?? false;
+	const isCanary = args.bump === "canary";
 
 	if (isDryRun) {
 		console.log("[DRY RUN] No changes will be made\n");
+	}
+
+	if (isCanary) {
+		console.log(
+			"[CANARY] Publishing canary release (will not affect 'latest' tag)\n",
+		);
 	}
 
 	// Fetch tags from remote to ensure we have the latest
 	console.log("Fetching git tags from remote...");
 	await fetchGitTags();
 
-	// Check for unstaged changes (unless in dry-run mode)
-	if (!isDryRun) {
+	// Check for unstaged changes (unless in dry-run mode or canary release)
+	// Canary releases don't commit changes, so unstaged changes are fine
+	if (!isDryRun && !isCanary) {
 		console.log("Checking git status...");
 		await checkForUnstagedChanges();
 	}
@@ -465,8 +497,14 @@ async function run() {
 		}
 
 		// Publish using bun publish (which automatically resolves workspace: and catalog:)
-		console.log("Publishing to npm...");
-		const publishResult = Bun.spawnSync(["bun", "publish"], {
+		// For canary releases, publish with --tag canary so it doesn't become "latest"
+		const publishCmd = isCanary
+			? ["bun", "publish", "--tag", "canary"]
+			: ["bun", "publish"];
+		console.log(
+			isCanary ? "Publishing to npm (canary tag)..." : "Publishing to npm...",
+		);
+		const publishResult = Bun.spawnSync(publishCmd, {
 			cwd: join(ROOT_DIR, pkg.path),
 			stdio: ["inherit", "inherit", "inherit"],
 		});
@@ -477,40 +515,60 @@ async function run() {
 
 		console.log(`Successfully published ${pkg.name}@${newVersion}`);
 
-		// Create GitHub release (automatically creates git tag if it doesn't exist)
-		await createGitHubRelease(pkg.name, newVersion, false);
+		// Create GitHub release (skip for canary releases)
+		if (!isCanary) {
+			await createGitHubRelease(pkg.name, newVersion, false);
+		}
 	}
 
-	// Commit version bumps
-	console.log(`\n${"=".repeat(50)}`);
-	console.log("Committing version bumps...");
-	console.log("=".repeat(50));
-	await commitVersionBumps(newVersion, packages);
+	// For canary releases, revert the version changes (don't commit canary versions)
+	if (isCanary) {
+		console.log(`\n${"=".repeat(50)}`);
+		console.log("Reverting canary version changes...");
+		console.log("=".repeat(50));
+		for (const pkg of packages) {
+			const pkgJson = await readPackageJson(pkg.path);
+			pkgJson.version = currentVersion;
+			await writePackageJson(pkg.path, pkgJson);
+		}
+		console.log(
+			"Reverted package.json versions (canary versions are not committed)",
+		);
+	} else {
+		// Commit version bumps
+		console.log(`\n${"=".repeat(50)}`);
+		console.log("Committing version bumps...");
+		console.log("=".repeat(50));
+		await commitVersionBumps(newVersion, packages);
 
-	// Push changes and tags to remote
-	console.log(`\n${"=".repeat(50)}`);
-	console.log("Pushing changes to remote...");
-	console.log("=".repeat(50));
-	const pushResult = Bun.spawnSync(["git", "push"], {
-		cwd: ROOT_DIR,
-		stdio: ["inherit", "inherit", "inherit"],
-	});
-	if (pushResult.exitCode !== 0) {
-		console.error("Failed to push changes to remote");
-		process.exit(1);
-	}
+		// Push changes and tags to remote
+		console.log(`\n${"=".repeat(50)}`);
+		console.log("Pushing changes to remote...");
+		console.log("=".repeat(50));
+		const pushResult = Bun.spawnSync(["git", "push"], {
+			cwd: ROOT_DIR,
+			stdio: ["inherit", "inherit", "inherit"],
+		});
+		if (pushResult.exitCode !== 0) {
+			console.error("Failed to push changes to remote");
+			process.exit(1);
+		}
 
-	const tagsResult = Bun.spawnSync(["git", "push", "--tags"], {
-		cwd: ROOT_DIR,
-		stdio: ["inherit", "inherit", "inherit"],
-	});
-	if (tagsResult.exitCode !== 0) {
-		console.error("Failed to push tags to remote");
-		process.exit(1);
+		const tagsResult = Bun.spawnSync(["git", "push", "--tags"], {
+			cwd: ROOT_DIR,
+			stdio: ["inherit", "inherit", "inherit"],
+		});
+		if (tagsResult.exitCode !== 0) {
+			console.error("Failed to push tags to remote");
+			process.exit(1);
+		}
 	}
 
 	console.log(`\n${"=".repeat(50)}`);
 	console.log("All packages published successfully!");
+	if (isCanary) {
+		console.log(`Install with: npm install <package>@canary`);
+	}
 	console.log("=".repeat(50));
 }
 
