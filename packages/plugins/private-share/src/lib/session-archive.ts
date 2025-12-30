@@ -597,7 +597,9 @@ async function remapAllJsonFiles(
 }
 
 /**
- * Recursively copy a directory
+ * Recursively copy a directory.
+ * Skips files that already exist at the destination to avoid permission errors
+ * (e.g., git objects in snapshots are stored with read-only permissions).
  */
 async function copyDirRecursive(
 	srcDir: string,
@@ -615,6 +617,14 @@ async function copyDirRecursive(
 			await mkdir(destPath, { recursive: true });
 			count += await copyDirRecursive(srcPath, destPath, transform);
 		} else if (entry.isFile()) {
+			// Skip files that already exist to avoid permission errors
+			// (git objects in snapshots are read-only and content-addressable,
+			// so if they exist with the same path, they have the same content)
+			if (await fileExists(destPath)) {
+				count++;
+				continue;
+			}
+
 			await mkdir(dirname(destPath), { recursive: true });
 
 			if (transform && entry.name.endsWith(".json")) {
