@@ -9,12 +9,15 @@
  * - Updates the version in package.json
  * - Runs the build process
  * - Publishes to npm using `bun publish`
- * - Creates a GitHub release (requires git tag to be created by developer first)
+ * - Creates a GitHub release with an automatically generated git tag
  *
  * Recommended workflow:
- * 1. Create git tags for each package: git tag @package/name@version
- * 2. Run this script: bun scripts/publish.ts
+ * 1. Run this script: bun scripts/publish.ts
+ * 2. Confirm the version bump and publish details
  * 3. Push to GitHub: git push && git push --tags
+ *
+ * Note: Git tags are automatically created by `gh release create` if they don't exist.
+ *       The script fetches tags from remote to ensure local tags are up to date.
  *
  * Usage:
  *   bun scripts/publish.ts                    # Interactive version bump (defaults to patch)
@@ -206,6 +209,20 @@ async function createGitHubRelease(
 }
 
 /**
+ * Fetch git tags from remote to ensure local tags are up to date
+ */
+async function fetchGitTags(): Promise<void> {
+	const result = Bun.spawnSync(["git", "fetch", "--tags"], {
+		cwd: ROOT_DIR,
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+
+	if (result.exitCode !== 0) {
+		console.warn("Warning: Failed to fetch tags from remote");
+	}
+}
+
+/**
  * Check if there are any unstaged changes in the git repository
  */
 async function checkForUnstagedChanges(): Promise<void> {
@@ -329,6 +346,10 @@ async function run() {
 	if (isDryRun) {
 		console.log("[DRY RUN] No changes will be made\n");
 	}
+
+	// Fetch tags from remote to ensure we have the latest
+	console.log("Fetching git tags from remote...");
+	await fetchGitTags();
 
 	// Check for unstaged changes (unless in dry-run mode)
 	if (!isDryRun) {
@@ -456,7 +477,7 @@ async function run() {
 
 		console.log(`Successfully published ${pkg.name}@${newVersion}`);
 
-		// Create GitHub release (assumes git tag was already created by developer)
+		// Create GitHub release (automatically creates git tag if it doesn't exist)
 		await createGitHubRelease(pkg.name, newVersion, false);
 	}
 
