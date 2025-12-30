@@ -29,7 +29,7 @@
  *   bun scripts/publish.ts --dry-run         # Show what would be published without making changes
  */
 
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { Glob } from "bun";
 
@@ -454,6 +454,7 @@ async function run() {
 			const pkg = packages[i];
 			if (!pkg) continue;
 			console.log(`  ${i + 1}. ${pkg.name}@${newVersion}`);
+			console.log(`     - Clean: rm -rf dist`);
 			console.log(`     - Run: bun run build`);
 			console.log(`     - Run: bun publish (resolves workspace: and catalog:)`);
 			if (!isCanary) {
@@ -514,6 +515,15 @@ async function run() {
 		console.log(`\n${"=".repeat(50)}`);
 		console.log(`Publishing ${pkg.name}...`);
 		console.log("=".repeat(50));
+
+		// Clean dist folder
+		const distPath = join(ROOT_DIR, pkg.path, "dist");
+		try {
+			await rm(distPath, { recursive: true });
+			console.log("Cleaned dist folder");
+		} catch {
+			// dist folder may not exist
+		}
 
 		// Build
 		console.log("Building...");
