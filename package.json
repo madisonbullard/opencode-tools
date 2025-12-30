@@ -24,12 +24,15 @@
 	"scripts": {
 		"check": "bun biome check",
 		"fix": "bun check --write ./",
+		"prepare": "husky",
 		"typecheck": "bun turbo typecheck"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.10",
 		"@tsconfig/bun": "catalog:",
 		"@types/bun": "catalog:",
+		"husky": "9.1.7",
+		"lint-staged": "16.1.1",
 		"turbo": "2.7.2",
 		"typescript": "catalog:"
 	}
