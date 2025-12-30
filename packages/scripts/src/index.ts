@@ -5,6 +5,8 @@ export {
 	resolveProjectPath,
 	verifyRepoPath,
 } from "./detect-repo.js";
+// Legacy exports for backwards compatibility with JSON-based shares
+// These can be removed in a future major version
 export {
 	analyzeSession,
 	getPrivateSharesDir,
