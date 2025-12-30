@@ -14,7 +14,7 @@ import { tool } from "@opencode-ai/plugin/tool";
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;
 
-export const PrivateSharePlugin: Plugin = async ({ client }) => {
+export const PrivateSharePlugin: Plugin = async (_ctx) => {
 	return {
 		tool: {
 			"private-share": tool({

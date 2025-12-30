@@ -178,13 +178,13 @@ async function writePackageJson(
 	data: Record<string, unknown>,
 ): Promise<void> {
 	const fullPath = join(ROOT_DIR, packagePath, "package.json");
-	await writeFile(fullPath, JSON.stringify(data, null, "\t") + "\n");
+	await writeFile(fullPath, `${JSON.stringify(data, null, "\t")}\n`);
 }
 
 /**
  * Verify that a git tag exists (assumes it was created by the developer)
  */
-async function verifyGitTag(
+async function _verifyGitTag(
 	packageName: string,
 	version: string,
 ): Promise<boolean> {

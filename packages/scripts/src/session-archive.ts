@@ -7,7 +7,6 @@
  * 3. Extract archives and place files in the correct locations
  */
 
-import { createWriteStream } from "node:fs";
 import {
 	mkdir,
 	readdir,
@@ -18,18 +17,12 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import {
 	type PathResolutionResult,
 	resolveProjectPath,
 	verifyRepoPath,
 } from "./detect-repo.js";
-import {
-	extractOriginalPath,
-	getProjectName,
-	remapPaths,
-} from "./path-utils.js";
+import { getProjectName, remapPaths } from "./path-utils.js";
 
 // Base opencode data directory
 const OPENCODE_DATA_DIR = join(homedir(), ".local", "share", "opencode");
@@ -73,11 +66,6 @@ interface SessionData {
 interface MessageData {
 	id: string;
 	sessionID: string;
-}
-
-interface PartData {
-	id: string;
-	messageID: string;
 }
 
 /**
