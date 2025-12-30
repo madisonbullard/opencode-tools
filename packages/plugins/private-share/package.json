@@ -25,7 +25,9 @@
 	},
 	"keywords": [
 		"opencode",
-		"opencode-plugin"
+		"opencode-plugin",
+		"share",
+		"session"
 	],
 	"devDependencies": {
 		"@types/node": "catalog:",

@@ -24,6 +24,11 @@
 		"prepublishOnly": "bun run build",
 		"typecheck": "tsc --noEmit"
 	},
+	"keywords": [
+		"opencode",
+		"scripts",
+		"utilities"
+	],
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"
