@@ -1,7 +1,7 @@
 {
 	"name": "@madisonbullard/opencode-private-share",
 	"version": "0.2.1",
-	"description": "OpenCode plugin that handles sharing to private AWS infra.",
+	"description": "OpenCode plugin that handles sharing/resuming sessions across machines.",
 	"author": "madisonbullard",
 	"license": "MIT",
 	"publishConfig": {
