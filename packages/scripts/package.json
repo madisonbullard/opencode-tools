@@ -4,8 +4,12 @@
 	"version": "0.1.0",
 	"description": "Scripts for opencode-tools",
 	"type": "module",
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
 	"devDependencies": {
-		"@types/bun": "catalog:"
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
 	},
 	"exports": {
 		".": "./src/index.ts",
