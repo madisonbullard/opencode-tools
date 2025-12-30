@@ -21,8 +21,8 @@ import {
 	type PathResolutionResult,
 	resolveProjectPath,
 	verifyRepoPath,
-} from "./detect-repo.js";
-import { getProjectName, remapPaths } from "./path-utils.js";
+} from "./detect-repo";
+import { getProjectName, remapPaths } from "./path-utils";
 
 // Base opencode data directory
 const OPENCODE_DATA_DIR = join(homedir(), ".local", "share", "opencode");

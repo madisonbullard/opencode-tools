@@ -1,3 +1,5 @@
+import type { Plugin } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin/tool";
 import {
 	type ArchiveAnalysis,
 	analyzeArchive,
@@ -7,9 +9,7 @@ import {
 	listSessionArchives,
 	type SessionFile,
 	validateArchiveRemapPath,
-} from "@madisonbullard/opencode-scripts";
-import type { Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin/tool";
+} from "./lib/session-archive";
 
 // Use the zod instance from the plugin to ensure version compatibility
 const z = tool.schema;
