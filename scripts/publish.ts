@@ -487,6 +487,28 @@ async function run() {
 	console.log("=".repeat(50));
 	await commitVersionBumps(newVersion, packages);
 
+	// Push changes and tags to remote
+	console.log(`\n${"=".repeat(50)}`);
+	console.log("Pushing changes to remote...");
+	console.log("=".repeat(50));
+	const pushResult = Bun.spawnSync(["git", "push"], {
+		cwd: ROOT_DIR,
+		stdio: ["inherit", "inherit", "inherit"],
+	});
+	if (pushResult.exitCode !== 0) {
+		console.error("Failed to push changes to remote");
+		process.exit(1);
+	}
+
+	const tagsResult = Bun.spawnSync(["git", "push", "--tags"], {
+		cwd: ROOT_DIR,
+		stdio: ["inherit", "inherit", "inherit"],
+	});
+	if (tagsResult.exitCode !== 0) {
+		console.error("Failed to push tags to remote");
+		process.exit(1);
+	}
+
 	console.log(`\n${"=".repeat(50)}`);
 	console.log("All packages published successfully!");
 	console.log("=".repeat(50));
